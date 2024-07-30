@@ -5,19 +5,22 @@ import asyncio
 import telnetlib
 import re
 
+# 공유 디렉토리
 share_dir = '/share'
 
+# Elfin 장치 토픽
 ELFIN_TOPIC = 'ew11'
 
-
+# 로그 기록 함수
 def log(string):
     date = time.strftime('%Y-%m-%d %p %I:%M:%S', time.localtime(time.time()))
     print(f'[{date}] {string}')
     return
 
-
+# 체크섬 생성 함수
 def checksum(input_hex):
     try:
+        # 입력된 16진수 문자열의 체크섬 계산
         input_hex = input_hex[:14]
         s1 = sum([int(input_hex[val], 16) for val in range(0, 14, 2)])
         s2 = sum([int(input_hex[val + 1], 16) for val in range(0, 14, 2)])
@@ -28,18 +31,23 @@ def checksum(input_hex):
     except:
         return None
 
-
+# 기기 검색 함수
 def find_device(config):
     HA_TOPIC = config['mqtt_TOPIC']
 
+    # 기기 정보 로드
     with open('/apps/cwbs_devinfo.json') as file:
         dev_info = json.load(file)
+
+    # 상태 패킷의 접두어를 통해 기기 식별
     statePrefix = {dev_info[name]['stateON'][:2]: name for name in dev_info if dev_info[name].get('stateON')}
     device_num = {name: 0 for name in statePrefix.values()}
     collect_data = {name: set() for name in statePrefix.values()}
 
+    # 기기 검색 시간 설정
     target_time = time.time() + 20
 
+    # MQTT 연결 시 호출되는 콜백 함수
     def on_connect(client, userdata, flags, rc):
         if rc == 0:
             log("MQTT broker 접속 완료")
@@ -53,6 +61,7 @@ def find_device(config):
                        5: 'Connection refused - not authorised'}
             log(errcode[rc])
 
+    # MQTT 메시지 수신 시 호출되는 콜백 함수
     def on_message(client, userdata, msg):
         raw_data = msg.payload.hex().upper()
         for k in range(0, len(raw_data), 16):
@@ -66,6 +75,7 @@ def find_device(config):
                 else:
                     device_num[name] = 1
 
+    # MQTT 클라이언트 설정
     mqtt_client = mqtt.Client('cwbs')
     mqtt_client.username_pw_set(config['mqtt_id'], config['mqtt_password'])
     mqtt_client.on_connect = on_connect
@@ -74,6 +84,7 @@ def find_device(config):
     mqtt_client.user_data_set(target_time)
     mqtt_client.loop_start()
 
+    # 기기 검색 대기
     while time.time() < target_time:
         pass
 
@@ -96,7 +107,7 @@ def find_device(config):
         log('파일을 수정하고 싶은 경우 종료 후 다시 시작하세요.')
     return dev_info
 
-
+# 작업 수행 함수
 def do_work(config, device_list):
     HA_TOPIC = config['mqtt_TOPIC']
     STATE_TOPIC = HA_TOPIC + '/{}/{}/state'
@@ -151,9 +162,9 @@ def do_work(config, device_list):
     def make_device_info(dev_name):
         num = device_list[dev_name].get('Number', 0)
         if num > 0:
-            arr = [ {cmd + onoff: make_hex(k, device_list[dev_name].get(cmd + onoff), device_list[dev_name].get(cmd + 'NUM'))
-                           for cmd in ['command', 'state'] for onoff in ['ON', 'OFF']} for k in range(num) ]
-            if dev_name == 'fan':
+            arr = [{cmd + onoff: make_hex(k, device_list[dev_name].get(cmd + onoff), device_list[dev_name].get(cmd + 'NUM'))
+                    for cmd in ['command', 'state'] for onoff in ['ON', 'OFF']} for k in range(num)]
+            if dev_name == 'Fan':
                 tmp_hex = arr[0]['stateON']
                 change = device_list[dev_name].get('speedNUM')
                 arr[0]['stateON'] = [make_hex(k, tmp_hex, change) for k in range(3)]
@@ -164,6 +175,7 @@ def do_work(config, device_list):
         else:
             return None
 
+    # 기기 정보 생성
     DEVICE_LISTS = {}
     for name in device_list:
         device_info = make_device_info(name)
@@ -187,6 +199,7 @@ def do_work(config, device_list):
     QUEUE = []
     COLLECTDATA = {'data': set(), 'EVtime': time.time(), 'LastRecv': time.time_ns()}
 
+    # Home Assistant로부터 명령 수신 시 호출되는 함수
     async def recv_from_HA(topics, value):
         if mqtt_log:
             log('[LOG] HA ->> : {} -> {}'.format('/'.join(topics), value))
@@ -254,6 +267,7 @@ def do_work(config, device_list):
             if debug:
                 log('[DEBUG] There is no command for {}'.format('/'.join(topics)))
 
+    # Elfin 장치로부터 데이터 수신 시 호출되는 함수
     async def slice_raw_data(raw_data):
         if elfin_log:
             log('[SIGNAL] receved: {}'.format(raw_data))
@@ -261,6 +275,7 @@ def do_work(config, device_list):
         cors = [recv_from_elfin(raw_data[k:k + 16]) for k in range(0, len(raw_data), 16) if raw_data[k:k + 16] == checksum(raw_data[k:k + 16])]
         await asyncio.gather(*cors)
 
+    # Elfin 장치로부터 데이터 수신 시 호출되는 함수
     async def recv_from_elfin(data):
         COLLECTDATA['LastRecv'] = time.time_ns()
         if data:
@@ -324,6 +339,7 @@ def do_work(config, device_list):
                     log(f"[WARNING] <{device_name}> 기기의 신호를 찾음: {data}")
                     log('[WARNING] 기기목록에 등록되지 않는 패킷입니다. JSON 파일을 확인하세요..')
 
+    # 상태 업데이트 함수
     async def update_state(device, idx, onoff):
         state = 'power'
         deviceID = device + str(idx + 1)
@@ -334,7 +350,7 @@ def do_work(config, device_list):
         if mqtt_log:
             log('[LOG] ->> HA : {} >> {}'.format(topic, onoff))
         return
-#
+
     async def update_fan(idx, onoff):
         deviceID = 'Fan' + str(idx + 1)
         if onoff == 'ON' or onoff == 'OFF':
@@ -390,6 +406,7 @@ def do_work(config, device_list):
         except:
             pass
 
+    # MQTT 연결 시 호출되는 함수
     def on_connect(client, userdata, flags, rc):
         if rc == 0:
             log("MQTT 접속 완료..")
@@ -417,12 +434,12 @@ def do_work(config, device_list):
                             "temp_cmd_t": f"{HA_TOPIC}/{device}{idx+1}/setTemp/command",
                             "temp_stat_t": f"{HA_TOPIC}/{device}{idx+1}/setTemp/state",
                             "curr_temp_t": f"{HA_TOPIC}/{device}{idx+1}/curTemp/state",
-                            "min_temp":"10",
-                            "max_temp":"30",
-                            "temp_step":"1",
-                            "modes":["off", "heat"],
+                            "min_temp": "10",
+                            "max_temp": "30",
+                            "temp_step": "1",
+                            "modes": ["off", "heat"],
                             "mode_state_template": "{% set modes = {'OFF': 'off', 'ON': 'heat'} %} {{modes[value] if value in modes.keys() else 'off'}}"
-                                }
+                        }
                     else:
                         payload = {
                             "device": {
@@ -472,6 +489,7 @@ def do_work(config, device_list):
                        5: 'Connection refused - not authorised'}
             log(errcode[rc])
 
+    # MQTT 메시지 수신 시 호출되는 함수
     def on_message(client, userdata, msg):
         topics = msg.topic.split('/')
         try:
@@ -482,10 +500,11 @@ def do_work(config, device_list):
         except:
             pass
 
+    # Elfin 장치로 명령을 전송하는 함수
     async def send_to_elfin():
         while True:
             try:
-                if time.time_ns() - COLLECTDATA['LastRecv'] > 10000000000:  # 10s
+                if time.time_ns() - COLLECTDATA['LastRecv'] > 10000000000:  # 10초
                     log('[WARNING] 10초간 신호를 받지 못했습니다. ew11 기기를 재시작합니다.')
                     try:
                         elfin_id = config['elfin_id']
@@ -522,19 +541,20 @@ def do_work(config, device_list):
                 return True
             await asyncio.sleep(0.01)
 
+    # MQTT 클라이언트 설정 및 시작
     mqtt_client.username_pw_set(config['mqtt_id'], config['mqtt_password'])
     mqtt_client.on_connect = on_connect
     mqtt_client.on_message = on_message
     mqtt_client.connect_async(config['mqtt_server'])
-    # mqtt_client.user_data_set(target_time)
     mqtt_client.loop_start()
 
+    # asyncio 이벤트 루프 실행
     loop = asyncio.get_event_loop()
     loop.run_until_complete(send_to_elfin())
     loop.close()
     mqtt_client.loop_stop()
 
-
+# 메인 함수
 if __name__ == '__main__':
     log("'Commax Wallpad by Saram'을 시작합니다.")
     with open('/data/options.json') as file:
