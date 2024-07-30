@@ -163,7 +163,7 @@ def do_work(config, device_list):
         num = device_list[dev_name].get('Number', 0)
         if num > 0:
             arr = [{cmd + onoff: make_hex(k, device_list[dev_name].get(cmd + onoff), device_list[dev_name].get(cmd + 'NUM'))
-                    for cmd in ['command', 'state'] for onoff in ['ON', 'OFF']} for k in range(num)]
+                    for cmd in ['command', 'state', 'reply'] for onoff in ['ON', 'OFF']} for k in range(num)]
             if dev_name == 'Fan':
                 tmp_hex = arr[0]['stateON']
                 change = device_list[dev_name].get('speedNUM')
