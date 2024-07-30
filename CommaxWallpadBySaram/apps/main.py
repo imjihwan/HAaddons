@@ -539,7 +539,7 @@ def do_work(config, device_list):
             except Exception as err:
                 log('[ERROR] send_to_elfin(): {}'.format(err))
                 return True
-            await asyncio.sleep(0.01)
+            await asyncio.sleep(0.1)
 
     # MQTT 클라이언트 설정 및 시작
     mqtt_client.username_pw_set(config['mqtt_id'], config['mqtt_password'])
