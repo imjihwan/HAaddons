@@ -256,7 +256,7 @@ def do_work(config, device_list):
             else:
                 sendcmd = DEVICE_LISTS[device]['list'][idx-1].get('command' + value)
                 if sendcmd:
-                    recvcmd = [DEVICE_LISTS[device]['list'][idx-1].get('state' + value, 'NULL')]
+                    recvcmd = [DEVICE_LISTS[device]['list'][idx-1].get('reply' + value, 'NULL')]
                     QUEUE.append({'sendcmd': sendcmd, 'recvcmd': recvcmd, 'count': 0})
                     if debug:
                         log('[DEBUG] Queued ::: sendcmd: {}, recvcmd: {}'.format(sendcmd, recvcmd))
